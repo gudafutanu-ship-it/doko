@@ -3,7 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ここはどこ？（安定版）</title>
+  <title>ここはどこ？</title>
+
+  <!-- PWA & iOS ホーム画面追加用設定 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ここどこ">
+  
+  <!-- アイコン（icon-512.png が無い場合のSVGダイナミックフォールバック付） -->
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <link rel="icon" type="image/png" href="icon-512.png">
+
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body, html {
@@ -44,15 +56,19 @@
     const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY";
     let isBusy = false;
 
+    // Service Worker の登録
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+
     function handleTap() {
       if (isBusy) return;
       isBusy = true;
 
-      // 画面をアクティブにする
       document.getElementById('bodyTag').classList.add('active');
-      setStatus("GPS信号を収得中...");
-      
-      // 直感的なオーディオフィードバック
+      setStatus("GPS信号を取得中...");
       playBeep();
 
       if (!navigator.geolocation) {
@@ -60,29 +76,26 @@
         return;
       }
 
-      // ★ここがポイント：ユーザーのタッチイベントの直結スレッドで即座に呼ぶ
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           setStatus(`緯度:${lat.toFixed(4)}, 経度:${lng.toFixed(4)}\n住所を検索中...`);
-
-          // 座標取得後にAPIへ通信（非同期）
           fetchAddress(lat, lng);
         },
         (error) => {
           let msg = "位置情報取得失敗";
           if (error.code === error.PERMISSION_DENIED) {
-            msg = "拒否されました (code 1)\n※Safariの仕様でブロックされました。\nページを再読み込みしてお試しください。";
+            msg = "拒否されました (code 1)\nSafariの設定を確認してください。";
           } else if (error.code === error.TIMEOUT) {
-            msg = "GPSタイムアウト（電波を確認してください）";
+            msg = "GPSタイムアウト（屋外で再度お試しください）";
           }
           finishSession(msg);
         },
         {
           enableHighAccuracy: true,
           timeout: 10000,
-          maximumAge: 0 // キャッシュを使わず常に最新の生GPSデータを取得
+          maximumAge: 0
         }
       );
     }
@@ -118,7 +131,6 @@
             return;
           }
         }
-        // フォールバック (OSM)
         const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
         const data2 = await res2.json();
         const address = data2.display_name || "住所不明";
