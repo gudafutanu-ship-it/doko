@@ -1,185 +1,136 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ここはどこ？</title>
-
-  <!-- PWA & iOS ホーム画面追加用設定 -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#000000">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="ここどこ">
-  
-  <!-- アイコン設定 -->
-  <link rel="apple-touch-icon" href="icon.png">
-  <link rel="icon" type="image/png" href="icon.png">
-
-  <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      background-color: #000000; color: #ffffff;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      overflow: hidden; touch-action: manipulation;
-    }
-    #screen {
-      width: 100%; height: 100%;
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      padding: 20px; text-align: center; cursor: pointer;
-    }
-    #uiContainer {
-      opacity: 0; visibility: hidden; transition: opacity 0.3s ease; width: 100%;
-    }
-    body.active #uiContainer { opacity: 1; visibility: visible; }
-    h1 { font-size: 2rem; margin: 0 0 10px 0; color: #007aff; }
-    #status {
-      font-size: 1.1rem; color: #34c759; max-width: 90vw; line-height: 1.5;
-      background: rgba(255, 255, 255, 0.08); padding: 15px; border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.15); word-break: break-all;
-    }
-    #hint { position: absolute; bottom: 30px; font-size: 0.85rem; color: #444444; }
-  </style>
-</head>
-<body id="bodyTag">
-
-  <div id="screen" onclick="handleTap()">
-    <div id="uiContainer">
-      <h1>ここはどこ？</h1>
-      <div id="status">待機中...</div>
-    </div>
-    <div id="hint">画面のどこでもタップ</div>
-  </div>
-
-  <script>
-    
-    let isBusy = false;
-
-    // Service Worker の登録
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(() => {});
-      });
-    }
-
-    function handleTap() {
-      if (isBusy) return;
-      isBusy = true;
-
-      // 音声読み上げ中の競合を防ぐため即時停止
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-
-      document.getElementById('bodyTag').classList.add('active');
-      setStatus("GPS信号を取得中...");
-      playBeep();
-
-      if (!navigator.geolocation) {
-        finishSession("エラー: GPS非対応");
-        return;
-      }
-
-      // ユーザーのタップ直結の同期コンテキストでGPS取得を実行
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setStatus(`緯度:${lat.toFixed(4)}, 経度:${lng.toFixed(4)}\n住所を検索中...`);
-          fetchAddress(lat, lng);
-        },
-        (error) => {
-          let msg = "位置情報取得失敗";
-          if (error.code === error.PERMISSION_DENIED) {
-            msg = "拒否されました (code 1)\nアプリを再起動してください。";
-          } else if (error.code === error.TIMEOUT) {
-            msg = "GPSタイムアウト（屋外で再度お試しください）";
-          }
-          finishSession(msg);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音声AIアシスタント</title>
+    <style>
+        /* 1. 黒い画面（画面全体がタッチエリア） */
+        body {
+            background-color: #000000;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+            touch-action: manipulation;
         }
-      );
-    }
+        #status {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        #result {
+            font-size: 18px;
+            color: #aaaaaa;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body onclick="startListening()">
 
-    function setStatus(text) {
-      document.getElementById('status').innerText = text;
-    }
+    <div id="status">画面をタップして<br>話しかけてください</div>
+    <div id="result"></div>
 
-    function playBeep() {
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.12);
-      } catch(e) {}
-    }
+    <script>
+        let isListening = false;
 
-    async function fetchAddress(lat, lng) {
-  try {
-    // ★ ここにCloudflare WorkersのURLを指定します
-    const workerUrl = "https://doko.gudafutanu.workers.dev/?lat=" + lat + "&lng=" + lng;
-    
-    const res = await fetch(workerUrl);
-    const data = await res.json();
-    
-    if (data.status === "OK" && data.results.length > 0) {
-      const clean = data.results[0].formatted_address.replace(/^日本、?/, '').replace(/〒\d{3}-\d{4}\s?/, '');
-      doneAndSpeak(`ここは、${clean} 付近です。`, clean);
-      return;
-    }
+        // 2. 画面をタップすると音声認識がスタートする
+        function startListening() {
+            // iOSの音声合成/認識のブロック解除と重複起動防止
+            if (isListening) return;
 
-    // フォールバック（OSM）
-    const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
-    const data2 = await res2.json();
-    const address = data2.display_name || "住所不明";
-    doneAndSpeak(`ここは、${address} 付近です。`, address);
-  } catch (e) {
-    finishSession("通信エラーが発生しました");
-  }
-}
+            // ブラウザの音声認識API（Web Speech API）の準備
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                document.getElementById('status').innerText = "このブラウザは音声認識に対応していません";
+                return;
+            }
 
-    function doneAndSpeak(speechText, displayTxt) {
-      setStatus(displayTxt);
-      speakAndFadeOut(speechText);
-    }
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'ja-JP';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
 
-    function speakAndFadeOut(text) {
-      if (!('speechSynthesis' in window)) {
-        setTimeout(resetScreen, 4000);
-        return;
-      }
-      
-      window.speechSynthesis.cancel();
-      const uttr = new SpeechSynthesisUtterance(text);
-      uttr.lang = 'ja-JP';
-      uttr.rate = 1.05;
-      uttr.onend = () => resetScreen();
-      uttr.onerror = () => resetScreen();
+            recognition.onstart = function() {
+                isListening = true;
+                document.getElementById('status').innerText = "聞いています...";
+                document.getElementById('result').innerText = "";
+            };
 
-      window.speechSynthesis.speak(uttr);
-    }
+            // 3. 話した言葉がテキストに変換されたとき
+            recognition.onresult = async function(event) {
+                const speechText = event.results[0][0].transcript;
+                document.getElementById('status').innerText = `「${speechText}」`;
+                document.getElementById('result').innerText = "考え中...";
 
-    function finishSession(msg) {
-      setStatus(msg);
-      speakAndFadeOut(msg);
-    }
+                // 現在地を取得してAI（Cloudflare Workers）へ送信する処理へつなげる
+                await sendToAI(speechText);
+            };
 
-    function resetScreen() {
-      document.getElementById('bodyTag').classList.remove('active');
-      isBusy = false;
-    }
-  </script>
+            recognition.onerror = function(event) {
+                document.getElementById('status').innerText = "もう一度画面をタップしてください";
+                isListening = false;
+            };
+
+            recognition.onend = function() {
+                isListening = false;
+            };
+
+            recognition.start();
+        }
+
+        // 4. 現在地と質問をCloudflare Workers（AI）に送る関数
+        async function sendToAI(question) {
+            if (!navigator.geolocation) {
+                speak("位置情報が取得できません");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+
+                try {
+                    // あなたのCloudflare WorkersのURL（AI応答用）
+                    const workerUrl = `https:doko.gudafutanu.workers.dev/?lat=${lat}&lng=${lng}&q=${encodeURIComponent(question)}`;
+                    
+                    const res = await fetch(workerUrl);
+                    const data = await res.json();
+                    
+                    // AIからの返答テキスト
+                    const aiAnswer = data.answer || "お答えが見つかりませんでした。";
+                    
+                    document.getElementById('status').innerText = aiAnswer;
+                    document.getElementById('result').innerText = "";
+
+                    // 5. AirPodsへ音声読み上げ
+                    speak(aiAnswer);
+
+                } catch (e) {
+                    const errMsg = "通信エラーが発生しました";
+                    document.getElementById('status').innerText = errMsg;
+                    speak(errMsg);
+                }
+            }, function(error) {
+                speak("位置情報の取得に失敗しました");
+            }, { timeout: 10000 });
+        }
+
+        // 音声合成（読み上げ）用関数
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ja-JP';
+            utterance.rate = 1.1;
+            window.speechSynthesis.speak(utterance);
+        }
+    </script>
 </body>
 </html>
