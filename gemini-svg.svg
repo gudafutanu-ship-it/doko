@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 背景（完全な黒） -->
+  <rect width="512" height="512" rx="115" fill="#000000" />
+  
+  <!-- 外側の微かなレーダー・波紋リング -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#1c1c1e" stroke-width="4" />
+  <circle cx="256" cy="256" r="110" fill="none" stroke="#2c2c2e" stroke-width="3" />
+
+  <!-- カーナビの現在地を示すシャープな矢印（シグナルブルー） -->
+  <g transform="rotate(25 256 256)">
+    <!-- 矢印の影や立体感 -->
+    <polygon points="256,110 350,370 256,310 162,370" fill="#0051a8" opacity="0.6" />
+    <!-- メインの矢印（Appleマップやナビのような鮮やかなブルー） -->
+    <polygon points="256,90 350,370 256,305 162,370" fill="#007aff" />
+    <!-- 矢印のハイライト（左半分） -->
+    <polygon points="256,90 256,305 162,370" fill="#3395ff" opacity="0.4" />
+  </g>
+
+  <!-- 中心の現在地ドット -->
+  <circle cx="256" cy="256" r="18" fill="#ffffff" />
+  <circle cx="256" cy="256" r="8" fill="#007aff" />
+</svg>
