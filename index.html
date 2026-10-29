@@ -3,68 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ここはどこ？（デバッグ版）</title>
+  <title>ここはどこ？（安定版）</title>
   <style>
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body, html {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background-color: #000000;
-      color: #ffffff;
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background-color: #000000; color: #ffffff;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      overflow: hidden;
-      touch-action: manipulation;
+      overflow: hidden; touch-action: manipulation;
     }
     #screen {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-      text-align: center;
-      cursor: pointer;
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 20px; text-align: center; cursor: pointer;
     }
     #uiContainer {
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.3s ease;
-      pointer-events: none;
-      width: 100%;
+      opacity: 0; visibility: hidden; transition: opacity 0.3s ease; width: 100%;
     }
-    body.active #uiContainer {
-      opacity: 1;
-      visibility: visible;
-    }
-    h1 {
-      font-size: 2rem;
-      margin: 0 0 10px 0;
-      color: #007aff;
-    }
+    body.active #uiContainer { opacity: 1; visibility: visible; }
+    h1 { font-size: 2rem; margin: 0 0 10px 0; color: #007aff; }
     #status {
-      font-size: 1.1rem;
-      color: #34c759;
-      max-width: 90vw;
-      line-height: 1.5;
-      background: rgba(255, 255, 255, 0.08);
-      padding: 15px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      word-break: break-all;
+      font-size: 1.1rem; color: #34c759; max-width: 90vw; line-height: 1.5;
+      background: rgba(255, 255, 255, 0.08); padding: 15px; border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15); word-break: break-all;
     }
-    #hint {
-      position: absolute;
-      bottom: 30px;
-      font-size: 0.85rem;
-      color: #444444;
-      pointer-events: none;
-    }
+    #hint { position: absolute; bottom: 30px; font-size: 0.85rem; color: #444444; }
   </style>
 </head>
 <body id="bodyTag">
@@ -85,47 +48,41 @@
       if (isBusy) return;
       isBusy = true;
 
+      // 画面をアクティブにする
       document.getElementById('bodyTag').classList.add('active');
-      setStatus("GPS信号を検索中...");
+      setStatus("GPS信号を収得中...");
+      
+      // 直感的なオーディオフィードバック
       playBeep();
 
       if (!navigator.geolocation) {
-        finishSession("エラー: Geolocation API非対応ブラウザ");
+        finishSession("エラー: GPS非対応");
         return;
       }
 
-      // 成功・失敗の詳細を捉えるため、タイムアウトを15秒に拡大、高精度を有効化
+      // ★ここがポイント：ユーザーのタッチイベントの直結スレッドで即座に呼ぶ
       navigator.geolocation.getCurrentPosition(
-        async (position) => {
+        (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          setStatus(`GPS取得成功\n緯度:${lat.toFixed(4)}, 経度:${lng.toFixed(4)}\n住所を変換中...`);
+          setStatus(`緯度:${lat.toFixed(4)}, 経度:${lng.toFixed(4)}\n住所を検索中...`);
 
-          if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY") {
-            await fetchGoogleAddress(lat, lng);
-          } else {
-            await fetchFallbackAddress(lat, lng);
-          }
+          // 座標取得後にAPIへ通信（非同期）
+          fetchAddress(lat, lng);
         },
         (error) => {
-          let errMessage = "不明なエラー";
-          switch(error.code) {
-            case error.PERMISSION_DENIED:
-              errMessage = "位置情報の利用が拒否されました（設定を確認してください）";
-              break;
-            case error.POSITION_UNAVAILABLE:
-              errMessage = "位置情報が取得できません（GPS電波不良）";
-              break;
-            case error.TIMEOUT:
-              errMessage = "位置情報の取得がタイムアウトしました";
-              break;
+          let msg = "位置情報取得失敗";
+          if (error.code === error.PERMISSION_DENIED) {
+            msg = "拒否されました (code 1)\n※Safariの仕様でブロックされました。\nページを再読み込みしてお試しください。";
+          } else if (error.code === error.TIMEOUT) {
+            msg = "GPSタイムアウト（電波を確認してください）";
           }
-          finishSession(`取得失敗 [code ${error.code}]:\n${errMessage}`);
+          finishSession(msg);
         },
         {
           enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0
+          timeout: 10000,
+          maximumAge: 0 // キャッシュを使わず常に最新の生GPSデータを取得
         }
       );
     }
@@ -150,35 +107,30 @@
       } catch(e) {}
     }
 
-    async function fetchGoogleAddress(lat, lng) {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&language=ja`;
+    async function fetchAddress(lat, lng) {
       try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.status === "OK" && data.results.length > 0) {
-          const rawAddress = data.results[0].formatted_address;
-          const cleanAddress = rawAddress.replace(/^日本、?/, '').replace(/〒\d{3}-\d{4}\s?/, '');
-          setStatus(cleanAddress);
-          speakAndFadeOut(`ここは、${cleanAddress} 付近です。`);
-        } else {
-          finishSession(`住所変換エラー: ${data.status}`);
+        if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY") {
+          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&language=ja`);
+          const data = await res.json();
+          if (data.status === "OK" && data.results.length > 0) {
+            const clean = data.results[0].formatted_address.replace(/^日本、?/, '').replace(/〒\d{3}-\d{4}\s?/, '');
+            doneAndSpeak(`ここは、${clean} 付近です。`, clean);
+            return;
+          }
         }
+        // フォールバック (OSM)
+        const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
+        const data2 = await res2.json();
+        const address = data2.display_name || "住所不明";
+        doneAndSpeak(`ここは、${address} 付近です。`, address);
       } catch (e) {
-        finishSession("通信エラー: Google APIに接続できません");
+        finishSession("通信エラーが発生しました");
       }
     }
 
-    async function fetchFallbackAddress(lat, lng) {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const address = data.display_name || "住所不明";
-        setStatus(address);
-        speakAndFadeOut(`ここは、${address} 付近です。`);
-      } catch (e) {
-        finishSession("通信エラー: OSMに接続できません");
-      }
+    function doneAndSpeak(speechText, displayTxt) {
+      setStatus(displayTxt);
+      speakAndFadeOut(speechText);
     }
 
     function speakAndFadeOut(text) {
