@@ -53,8 +53,6 @@
   </div>
 
   <script>
-    // ★ここにあなたのGoogle Maps APIキーを設定してください（1箇所だけでOKです）
-    const GOOGLE_MAPS_API_KEY = "AIzaSyA7VKya7aSHPY5lrarXwDn6qYbRnY6XQaM";
     
     let isBusy = false;
 
@@ -129,25 +127,28 @@
     }
 
     async function fetchAddress(lat, lng) {
-      try {
-        if (GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY") {
-          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&language=ja`);
-          const data = await res.json();
-          if (data.status === "OK" && data.results.length > 0) {
-            const clean = data.results[0].formatted_address.replace(/^日本、?/, '').replace(/〒\d{3}-\d{4}\s?/, '');
-            doneAndSpeak(`ここは、${clean} 付近です。`, clean);
-            return;
-          }
-        }
-        // フォールバック（OSM）
-        const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
-        const data2 = await res2.json();
-        const address = data2.display_name || "住所不明";
-        doneAndSpeak(`ここは、${address} 付近です。`, address);
-      } catch (e) {
-        finishSession("通信エラーが発生しました");
-      }
+  try {
+    // ★ ここにCloudflare WorkersのURLを指定します
+    const workerUrl = "https://doko.gudafutanu.workers.dev/?lat=" + lat + "&lng=" + lng;
+    
+    const res = await fetch(workerUrl);
+    const data = await res.json();
+    
+    if (data.status === "OK" && data.results.length > 0) {
+      const clean = data.results[0].formatted_address.replace(/^日本、?/, '').replace(/〒\d{3}-\d{4}\s?/, '');
+      doneAndSpeak(`ここは、${clean} 付近です。`, clean);
+      return;
     }
+
+    // フォールバック（OSM）
+    const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
+    const data2 = await res2.json();
+    const address = data2.display_name || "住所不明";
+    doneAndSpeak(`ここは、${address} 付近です。`, address);
+  } catch (e) {
+    finishSession("通信エラーが発生しました");
+  }
+}
 
     function doneAndSpeak(speechText, displayTxt) {
       setStatus(displayTxt);
