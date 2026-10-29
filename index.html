@@ -6,17 +6,15 @@
   <title>ここはどこ？</title>
 
   <!-- PWA & iOS ホーム画面追加用設定 -->
-<link rel="apple-touch-icon" href="icon.png">
-<link rel="icon" type="image/png" href="icon.png">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ここどこ">
   
-  <!-- アイコン（icon-512.png が無い場合のSVGダイナミックフォールバック付） -->
-  <link rel="apple-touch-icon" href="icon-512.png">
-  <link rel="icon" type="image/png" href="icon-512.png">
+  <!-- アイコン設定 -->
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
 
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -55,7 +53,9 @@
   </div>
 
   <script>
-    const GOOGLE_MAPS_API_KEY = "YOUR_GOOGLE_MAPS_API_KEY";
+    // ★ここにあなたのGoogle Maps APIキーを設定してください（1箇所だけでOKです）
+    const GOOGLE_MAPS_API_KEY = "AIzaSyA7VKya7aSHPY5lrarXwDn6qYbRnY6XQaM";
+    
     let isBusy = false;
 
     // Service Worker の登録
@@ -69,6 +69,11 @@
       if (isBusy) return;
       isBusy = true;
 
+      // 音声読み上げ中の競合を防ぐため即時停止
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+
       document.getElementById('bodyTag').classList.add('active');
       setStatus("GPS信号を取得中...");
       playBeep();
@@ -78,6 +83,7 @@
         return;
       }
 
+      // ユーザーのタップ直結の同期コンテキストでGPS取得を実行
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const lat = position.coords.latitude;
@@ -88,7 +94,7 @@
         (error) => {
           let msg = "位置情報取得失敗";
           if (error.code === error.PERMISSION_DENIED) {
-            msg = "拒否されました (code 1)\nSafariの設定を確認してください。";
+            msg = "拒否されました (code 1)\nアプリを再起動してください。";
           } else if (error.code === error.TIMEOUT) {
             msg = "GPSタイムアウト（屋外で再度お試しください）";
           }
@@ -96,7 +102,7 @@
         },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
+          timeout: 15000,
           maximumAge: 0
         }
       );
@@ -113,7 +119,7 @@
         const gain = audioCtx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
@@ -133,6 +139,7 @@
             return;
           }
         }
+        // フォールバック（OSM）
         const res2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`);
         const data2 = await res2.json();
         const address = data2.display_name || "住所不明";
@@ -148,12 +155,18 @@
     }
 
     function speakAndFadeOut(text) {
+      if (!('speechSynthesis' in window)) {
+        setTimeout(resetScreen, 4000);
+        return;
+      }
+      
       window.speechSynthesis.cancel();
       const uttr = new SpeechSynthesisUtterance(text);
       uttr.lang = 'ja-JP';
       uttr.rate = 1.05;
       uttr.onend = () => resetScreen();
       uttr.onerror = () => resetScreen();
+
       window.speechSynthesis.speak(uttr);
     }
 
